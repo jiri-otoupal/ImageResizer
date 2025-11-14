@@ -1,16 +1,24 @@
 import io
 import os
+import time
 import zipfile
 from pathlib import Path
 from typing import List
 
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from config import settings
 from image_processor import ImageProcessor
+from metrics import (
+    http_requests_total,
+    http_request_duration_seconds,
+    get_metrics
+)
 from models import ResizeRequest, ResizeResponse
 
 app = FastAPI(title="Image Resizer API")
@@ -23,7 +31,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        method = request.method
+        endpoint = request.url.path
+
+        try:
+            response = await call_next(request)
+            status = str(response.status_code)
+            duration = time.time() - start_time
+
+            http_requests_total.labels(method=method, endpoint=endpoint, status=status).inc()
+            http_request_duration_seconds.labels(method=method, endpoint=endpoint).observe(duration)
+
+            return response
+        except Exception as e:
+            status = "500"
+            duration = time.time() - start_time
+            http_requests_total.labels(method=method, endpoint=endpoint, status=status).inc()
+            http_request_duration_seconds.labels(method=method, endpoint=endpoint).observe(duration)
+            raise
+
+
+app.add_middleware(MetricsMiddleware)
+
 processor = ImageProcessor()
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint"""
+    return get_metrics()
 
 
 @app.post("/api/upload", response_model=ResizeResponse)

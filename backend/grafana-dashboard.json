@@ -1,0 +1,118 @@
+{
+  "dashboard": {
+    "title": "Image Resizer Metrics",
+    "panels": [
+      {
+        "title": "HTTP Requests Total",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total[5m])) by (endpoint, status)",
+            "legendFormat": "{{endpoint}} - {{status}}"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "HTTP Request Duration",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint))",
+            "legendFormat": "p95 - {{endpoint}}"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "Images Uploaded",
+        "targets": [
+          {
+            "expr": "rate(images_uploaded_total[5m])",
+            "legendFormat": "Uploads/sec"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "Upload Size Distribution",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(images_uploaded_size_bytes_bucket[5m])) by (le))",
+            "legendFormat": "p95 Upload Size"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "Images Processed by Mode",
+        "targets": [
+          {
+            "expr": "sum(rate(images_processed_total[5m])) by (mode, status)",
+            "legendFormat": "{{mode}} - {{status}}"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "Image Processing Duration",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(image_processing_duration_seconds_bucket[5m])) by (le, mode))",
+            "legendFormat": "p95 - {{mode}}"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "Resize Tasks",
+        "targets": [
+          {
+            "expr": "sum(rate(resize_tasks_total[5m])) by (mode, status)",
+            "legendFormat": "{{mode}} - {{status}}"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "Task Duration",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(resize_task_duration_seconds_bucket[5m])) by (le, mode))",
+            "legendFormat": "p95 - {{mode}}"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "Active Tasks",
+        "targets": [
+          {
+            "expr": "active_tasks",
+            "legendFormat": "Active Tasks"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "Images Per Task",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(images_per_task_bucket[5m])) by (le))",
+            "legendFormat": "p95 Images/Task"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "Output File Size",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(image_output_size_bytes_bucket[5m])) by (le))",
+            "legendFormat": "p95 Output Size"
+          }
+        ],
+        "type": "graph"
+      }
+    ]
+  }
+}
+

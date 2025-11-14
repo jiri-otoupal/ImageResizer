@@ -10,6 +10,17 @@ from typing import Dict, List, Optional, Tuple
 from PIL import Image
 
 from config import settings
+from metrics import (
+    images_uploaded_total,
+    images_uploaded_size_bytes,
+    images_processed_total,
+    image_processing_duration_seconds,
+    image_output_size_bytes,
+    resize_tasks_total,
+    resize_task_duration_seconds,
+    images_per_task,
+    active_tasks
+)
 
 
 class ImageProcessor:
@@ -27,14 +38,21 @@ class ImageProcessor:
         file_path = Path(settings.UPLOAD_DIR) / f"{file_id}_{original_filename}"
 
         content = await file.read()
+        file_size = len(content)
+        
         with open(file_path, "wb") as f:
             f.write(content)
 
         # Store file info
         self.file_info[file_id] = {
             "filename": original_filename,
-            "path": str(file_path)
+            "path": str(file_path),
+            "size": file_size
         }
+
+        # Track metrics
+        images_uploaded_total.inc()
+        images_uploaded_size_bytes.observe(file_size)
 
         return file_id
 
@@ -67,11 +85,17 @@ class ImageProcessor:
                 file_data.append({
                     "file_id": file_id,
                     "path": file_info["path"],
-                    "filename": original_filename
+                    "filename": original_filename,
+                    "size": file_info.get("size", 0)
                 })
 
         if not file_data:
             raise ValueError("No valid files found")
+
+        # Track metrics
+        images_per_task.observe(len(file_data))
+        resize_tasks_total.labels(mode=mode, status="started").inc()
+        active_tasks.inc()
 
         # Initialize task
         self.tasks[task_id] = {
@@ -80,7 +104,8 @@ class ImageProcessor:
             "completed": 0,
             "files": [],
             "filenames": {},
-            "started_at": time.time()
+            "started_at": time.time(),
+            "mode": mode
         }
 
         # Start processing in background
@@ -164,12 +189,30 @@ class ImageProcessor:
                         self.tasks[task_id]["filenames"][normalized_path] = output_filename
                         self.tasks[task_id]["completed"] += 1
 
+            task_duration = time.time() - self.tasks[task_id]["started_at"]
             self.tasks[task_id]["status"] = "completed"
             self.tasks[task_id]["files"] = output_files
+
+            # Track metrics
+            resize_tasks_total.labels(mode=mode, status="completed").inc()
+            resize_task_duration_seconds.labels(mode=mode).observe(task_duration)
+            images_processed_total.labels(mode=mode, status="success").inc(len(output_files))
+
+            # Track output file sizes
+            for output_file in output_files:
+                try:
+                    file_size = os.path.getsize(output_file)
+                    image_output_size_bytes.observe(file_size)
+                except:
+                    pass
 
         except Exception as e:
             self.tasks[task_id]["status"] = "error"
             self.tasks[task_id]["error"] = str(e)
+            resize_tasks_total.labels(mode=mode, status="error").inc()
+            images_processed_total.labels(mode=mode, status="error").inc(len(file_data))
+        finally:
+            active_tasks.dec()
 
     def get_progress(self, task_id: str) -> Optional[Dict]:
         """Get progress of resize task"""
@@ -221,6 +264,7 @@ def resize_image(
         fill_color: Optional[str]
 ) -> Optional[str]:
     """Resize single image (runs in separate process)"""
+    start_time = time.time()
     try:
         with Image.open(input_path) as img:
             # Convert RGBA if needed
@@ -273,10 +317,16 @@ def resize_image(
 
             # Save
             resized.save(output_path, "PNG", optimize=True)
+
+            # Track processing duration
+            duration = time.time() - start_time
+            image_processing_duration_seconds.labels(mode=mode).observe(duration)
+            
             return str(output_path)
 
     except Exception as e:
         print(f"Error processing {input_path}: {e}")
+        images_processed_total.labels(mode=mode, status="error").inc()
         return None
 
 
